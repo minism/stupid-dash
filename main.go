@@ -22,7 +22,12 @@ func main() {
 
 	// Init http server.
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		tmpl.Execute(w, getTemplateData(hostname, title))
+		if len(r.Header.Get("X-StupidDash")) > 0 {
+			// Avoid infinite recursion if we query self.
+			fmt.Fprintln(w, "OK")
+		} else {
+			tmpl.Execute(w, getTemplateData(hostname, title))
+		}
 	})
 	fmt.Printf("Listening on %v\n", port)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%v", port), nil))

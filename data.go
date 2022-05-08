@@ -1,11 +1,10 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"fmt"
-	"net"
-	"regexp"
+	"log"
+	"net/http"
 	"time"
 
 	"github.com/docker/docker/api/types"
@@ -13,6 +12,7 @@ import (
 )
 
 var dockerClient *client.Client
+var httpClient *http.Client
 
 type ContainerData struct {
 	Name string
@@ -31,6 +31,11 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
+
+	// Init http client.
+	httpClient = &http.Client{
+		Timeout: time.Second * 5,
+	}
 }
 
 func getTemplateData(hostname string, title string) TemplateContext {
@@ -43,7 +48,7 @@ func getTemplateData(hostname string, title string) TemplateContext {
 	for _, container := range containers {
 		for _, port := range container.Ports {
 			// Check if port is HTTP.
-			if isPortHttp(port.PublicPort) {
+			if isPortHttp(container, port) {
 				containerDatas = append(containerDatas, ContainerData{
 					Name: container.Names[0][1:],
 					Url:  fmt.Sprintf("%v:%v", hostname, port.PublicPort),
@@ -59,18 +64,26 @@ func getTemplateData(hostname string, title string) TemplateContext {
 	}
 }
 
-func isPortHttp(port uint16) bool {
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%v", port), time.Duration(10*time.Second))
+func isPortHttp(container types.Container, port types.Port) bool {
+	// Try each container IP.
+	for _, network := range container.NetworkSettings.Networks {
+		if tryHttpConnection(network.IPAddress, port.PrivatePort) {
+			return true
+		}
+	}
+	return false
+}
+
+func tryHttpConnection(ip string, port uint16) bool {
+	url := fmt.Sprintf("http://%v:%v/", ip, port)
+	log.Printf("Trying container at %v", url)
+
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		panic(err)
 	}
+	req.Header.Set("X-StupidDash", "1")
 
-	fmt.Fprintf(conn, "GET / HTTP/1.0\r\n\r\n")
-	response, err := bufio.NewReader(conn).ReadString('\n')
-	if err != nil {
-		return false
-	}
-
-	match, _ := regexp.MatchString("^HTTP", response)
-	return match
+	_, err = httpClient.Do(req)
+	return err == nil
 }

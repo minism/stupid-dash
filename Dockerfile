@@ -1,6 +1,6 @@
 FROM golang:alpine
 
-RUN apk add --update gcc musl-dev git
+RUN apk add --update gcc musl-dev git curl
 
 WORKDIR /app
 
